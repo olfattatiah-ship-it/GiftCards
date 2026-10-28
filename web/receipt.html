@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>سند استلام بطاقة إهداء</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script src="assets/common.js"></script>
+  <script>
+    const I = App.icon;
+    const id = Number(new URLSearchParams(location.search).get('id'));
+    const esc = App.escapeHtml;
+    (async () => {
+      try {
+        const { content } = await App.mount({
+          active: 'beneficiaries.html',
+          title: 'سند الاستلام',
+          back: `beneficiary.html?id=${id}`,
+        });
+        const data = await App.api(`api/beneficiaries/${id}`);
+        const b = data.beneficiary;
+        const active = data.cards.find((c) => c.status === 'active');
+        if (!active) {
+          content.innerHTML = `<div class="notice warn">${I('alert')}<div>لا يمكن طباعة السند قبل إضافة بطاقة نشطة للمستفيد.</div></div>`;
+          return;
+        }
+        const today = new Date().toLocaleDateString('ar-SA-u-ca-gregory', { year: 'numeric', month: 'long', day: 'numeric' });
+        document.title = `سند استلام - ${b.full_name}`;
+        content.innerHTML = `
+          <div class="receipt-screen">
+            <div class="no-print" style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+              <button class="btn primary" id="printBtn" type="button">${I('print')}<span>طباعة السند</span></button>
+              <span class="muted">يُطبع هذا السند لهذا المستفيد وحده.</span>
+            </div>
+            <article class="receipt">
+              <header class="head">
+                <img src="assets/logo-bw.png" alt="شعار الجمعية">
+                <div>
+                  <div class="org">جمعية سيهات للخدمات الاجتماعية</div>
+                  <div class="reg">مسجلة بالمركز الوطني لتنمية القطاع غير الربحي برقم 6</div>
+                </div>
+              </header>
+              <h2>سند استلام بطاقة إهداء</h2>
+              <div class="date">${today}</div>
+              <div class="body">
+                <div>رقم المستفيد: <span class="fill num">${esc(b.file_no)}</span></div>
+                <div>أقر أنا الموقع اسمي/ <span class="fill">${esc(b.full_name)}</span> أنني قد استلمت بطاقة إهداء القابلة للشحن،
+                  والخاصة بصرف المساعدة الغذائية من المحلات التجارية برقم (<span class="fill num" dir="ltr">${esc(active.card_no)}</span>)
+                  الخاصة بأسواق المنتزه، وفي حالة فقدان البطاقة فإنه يلزمني سداد مبلغ (20) ريال لاستخراج بدل فاقد.
+                </div>
+                <div>علمًا بأنني أفهمت أنه ستصلني رسالة (sms) شهرية بشحن البطاقة حسب قرار المساعدة الخاصة بي، وعليه يلزمني التأكد من وجود رصيد في البطاقة أو رصيد سابق لم يصرف منعًا للإحراج مع موظفي المحلات التجارية، وعليه جرى التوقيع.</div>
+              </div>
+              <div class="sign">
+                <div><span>الاسم:</span> ${esc(b.full_name)}</div>
+                <div><span>رقم الجوال:</span> <span dir="ltr">${esc(b.phone || '')}</span></div>
+                <div><span>التاريخ:</span> &nbsp;&nbsp; / &nbsp;&nbsp; / &nbsp;&nbsp; هـ</div>
+                <div><span>التوقيع:</span></div>
+              </div>
+            </article>
+          </div>`;
+        document.getElementById('printBtn').addEventListener('click', () => window.print());
+      } catch (err) {
+        if (err.message !== 'يجب تسجيل الدخول') App.toast(err.message, 'error');
+      }
+    })();
+  </script>
+</body>
+</html>

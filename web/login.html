@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>تسجيل الدخول</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="login-page">
+    <section class="login-hero">
+      <img src="assets/logo-color.png" alt="شعار جمعية سيهات للخدمات الاجتماعية">
+      <div class="gold-line"></div>
+      <h1>نظام إدارة بطاقات الإهداء</h1>
+      <p>إدارة المستفيدين والبطاقات، ومتابعة الاستحقاقات والشحن، وسجل كامل لعمليات الاستيراد والتصدير.</p>
+    </section>
+
+    <section class="login-form-wrap">
+      <form class="login-form" id="form">
+        <h2>مرحبًا بعودتك</h2>
+        <div class="sub">سجّلي الدخول بالحساب المعتمد من إدارة الجمعية.</div>
+
+        <div class="field">
+          <label for="username">اسم المستخدم</label>
+          <input class="input ltr" type="text" id="username" name="username" required autofocus autocomplete="username">
+        </div>
+        <div class="field">
+          <label for="password">كلمة المرور</label>
+          <input class="input ltr" type="password" id="password" name="password" required autocomplete="current-password">
+        </div>
+
+        <div class="notice danger" id="msg" hidden></div>
+        <button class="btn primary" type="submit" style="width:100%;padding:13px">دخول</button>
+      </form>
+    </section>
+  </div>
+  <script src="assets/common.js"></script>
+  <script>
+    const form = document.getElementById('form');
+    const msg = document.getElementById('msg');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      msg.hidden = true;
+      const btn = form.querySelector('button');
+      btn.disabled = true;
+      try {
+        await App.api('api/login', {
+          method: 'POST',
+          body: {
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value,
+          },
+        });
+        location.href = 'index.html';
+      } catch (err) {
+        msg.textContent = err.message;
+        msg.hidden = false;
+        document.getElementById('password').value = '';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>المستفيدون والبطاقات</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script src="assets/common.js"></script>
+  <script>
+    const I = App.icon;
+    const esc = App.escapeHtml;
+    const params = new URLSearchParams(location.search);
+    const state = {
+      q: params.get('q') || '',
+      filter: params.get('filter') || 'all',
+      page: 1,
+      pageSize: 50,
+      total: 0,
+    };
+
+    const FILTERS = [
+      ['all', 'الكل'],
+      ['has_card', 'لديه بطاقة'],
+      ['no_card', 'بلا بطاقة'],
+      ['flagged', 'يحتاج تأكيد'],
+      ['green', 'نشطة'],
+      ['orange', 'تحتاج متابعة'],
+      ['red', 'غير نشطة'],
+    ];
+
+    function row(b) {
+      const flag = b.phone_flag
+        ? `<span class="badge orange plain" style="margin-inline-start:6px">${b.phone_flag === 'duplicate' ? 'جوال مكرر' : 'رقم غير سعودي'}</span>`
+        : '';
+      return `
+        <tr class="row" data-id="${b.id}">
+          <td class="num"><b>${esc(b.file_no)}</b></td>
+          <td>${esc(b.full_name)}</td>
+          <td class="hide-sm num" dir="ltr" style="text-align:right">${esc(b.phone || '—')}${flag}</td>
+          <td class="hide-sm num" dir="ltr" style="text-align:right">${b.card_no ? esc(b.card_no) : '<span class="badge red">بلا بطاقة</span>'}</td>
+          <td>${App.statusBadge(b.status)}</td>
+          <td style="width:36px;color:var(--muted)">${I('back')}</td>
+        </tr>`;
+    }
+
+    async function load() {
+      const qs = new URLSearchParams({ q: state.q, filter: state.filter, page: state.page });
+      const data = await App.api('api/beneficiaries?' + qs.toString());
+      state.total = data.total;
+      const pages = Math.max(1, Math.ceil(data.total / state.pageSize));
+      document.getElementById('segments').innerHTML = FILTERS.map(([k, label]) =>
+        `<button type="button" data-filter="${k}" class="${k === state.filter ? 'active' : ''}">${label}</button>`).join('');
+      document.getElementById('rows').innerHTML = data.items.length
+        ? data.items.map(row).join('')
+        : `<tr><td colspan="6"><div class="empty">${I('search')}<div>لا توجد نتائج مطابقة</div></div></td></tr>`;
+      document.getElementById('count').textContent = `${data.total.toLocaleString('ar-SA')} مستفيد`;
+      document.getElementById('pageInfo').textContent = `صفحة ${state.page} من ${pages}`;
+      document.getElementById('prev').disabled = state.page <= 1;
+      document.getElementById('next').disabled = state.page >= pages;
+      document.querySelectorAll('tr.row').forEach((tr) => tr.addEventListener('click', () => {
+        location.href = `beneficiary.html?id=${tr.dataset.id}`;
+      }));
+      document.querySelectorAll('#segments button').forEach((b) => b.addEventListener('click', () => {
+        state.filter = b.dataset.filter; state.page = 1; load();
+      }));
+    }
+
+    (async () => {
+      try {
+        const { content } = await App.mount({ active: 'beneficiaries.html', title: 'المستفيدون والبطاقات' });
+        content.innerHTML = `
+          <div class="page-head">
+            <div>
+              <h1>المستفيدون والبطاقات</h1>
+              <p>ابحثي بالاسم أو رقم الملف أو الجوال أو رقم البطاقة</p>
+            </div>
+          </div>
+
+          <div class="card" style="padding:16px">
+            <div class="toolbar" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+              <div class="search">
+                ${I('search')}
+                <input class="input" id="q" type="search" placeholder="مثال: أحمد، 0038، 0531…" value="${esc(state.q)}">
+              </div>
+              <span class="muted" id="count"></span>
+            </div>
+            <div class="segmented" id="segments" style="margin-bottom:6px"></div>
+          </div>
+
+          <div class="card" style="padding:0;margin-top:16px;overflow:hidden">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>رقم الملف</th>
+                    <th>الاسم</th>
+                    <th class="hide-sm">الجوال</th>
+                    <th class="hide-sm">رقم البطاقة</th>
+                    <th>الحالة</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="rows"><tr><td colspan="6" class="muted" style="padding:24px">جارٍ التحميل…</td></tr></tbody>
+              </table>
+            </div>
+            <div style="display:flex;gap:10px;justify-content:center;align-items:center;padding:14px">
+              <button class="btn ghost sm" id="prev" type="button">السابق</button>
+              <span class="muted" id="pageInfo"></span>
+              <button class="btn ghost sm" id="next" type="button">التالي</button>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px">
+            <div class="card-h"><h2>دليل الألوان</h2></div>
+            <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px">
+              <div class="legend-item"><span class="dot green"></span><div><b>نشطة</b><span class="muted">آخر شحن خلال الشهرين الماضيين، بما في ذلك الشهرين</span></div></div>
+              <div class="legend-item"><span class="dot orange"></span><div><b>تحتاج متابعة</b><span class="muted">أكثر من شهرين وحتى أقل من أربعة أشهر</span></div></div>
+              <div class="legend-item"><span class="dot red"></span><div><b>غير نشطة</b><span class="muted">أربعة أشهر أو أكثر، أو لا يوجد أي شحن سابق</span></div></div>
+            </div>
+          </div>`;
+
+        document.getElementById('q').value = state.q;
+        let timer;
+        document.getElementById('q').addEventListener('input', (e) => {
+          clearTimeout(timer);
+          timer = setTimeout(() => { state.q = e.target.value.trim(); state.page = 1; load(); }, 300);
+        });
+        document.getElementById('prev').addEventListener('click', () => { state.page--; load(); });
+        document.getElementById('next').addEventListener('click', () => { state.page++; load(); });
+        await load();
+      } catch (err) {
+        if (err.message !== 'يجب تسجيل الدخول') {
+          document.getElementById('app').innerHTML = `<div class="content"><div class="notice danger">${esc(err.message)}</div></div>`;
+        }
+      }
+    })();
+  </script>
+</body>
+</html>

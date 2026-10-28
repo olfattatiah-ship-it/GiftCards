@@ -1,0 +1,392 @@
+﻿<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>استحقاقات الشحن</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script src="assets/common.js"></script>
+  <script>
+    const I = App.icon;
+    const esc = App.escapeHtml;
+    const money = (n) => (n === null || n === undefined)
+      ? '—'
+      : Number(n).toLocaleString('ar-SA', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' ر.س';
+    const state = { user: null, analysis: null, filter: 'attention' };
+
+    const STATUS = {
+      ready: ['جاهز', 'green'],
+      unregistered: ['غير مسجل', 'red'],
+      missing_card: ['بلا بطاقة', 'red'],
+      name_mismatch: ['اسم مختلف', 'orange'],
+      duplicate: ['مكرر في الملف', 'red'],
+      invalid: ['خطأ في الصف', 'red'],
+    };
+    const FILTERS = [
+      ['attention', 'يحتاج إجراء'],
+      ['all', 'الكل'],
+      ['ready', 'جاهز'],
+      ['unregistered', 'غير مسجل'],
+      ['missing_card', 'بلا بطاقة'],
+      ['name_mismatch', 'اسم مختلف'],
+      ['invalid', 'أخطاء ومكررات'],
+    ];
+
+    const needsAction = (r) => r.blocking || (r.beneficiary && !r.beneficiary.phone);
+
+    function matchesFilter(r) {
+      if (state.filter === 'all') return true;
+      if (state.filter === 'attention') return needsAction(r);
+      if (state.filter === 'invalid') return r.status === 'invalid' || r.status === 'duplicate';
+      return r.status === state.filter;
+    }
+
+    function actionsFor(r) {
+      if (r.status === 'unregistered') return `<button class="btn primary sm" data-act="add" data-row="${r.id}" type="button">${I('plus')}<span>إضافة مستفيد وبطاقة</span></button>`;
+      if (r.status === 'missing_card') return `<button class="btn primary sm" data-act="card" data-row="${r.id}" type="button">${I('card')}<span>إضافة بطاقة</span></button>`;
+      if (r.status === 'name_mismatch') return `
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn ghost sm" data-act="keep" data-row="${r.id}" type="button">الإبقاء على الاسم الحالي</button>
+          <button class="btn primary sm" data-act="useFile" data-row="${r.id}" type="button">تحديث من الملف</button>
+        </div>`;
+      if (r.status === 'duplicate') return `<span class="muted">اختاري الخيار المناسب في أعلى الصفحة</span>`;
+      if (r.status === 'invalid') return `<span class="muted">يتطلب تصحيح الملف ورفعه من جديد</span>`;
+      if (r.beneficiary && !r.beneficiary.phone) return `<button class="btn ghost sm" data-act="phone" data-row="${r.id}" type="button">${I('phone')}<span>إضافة الجوال</span></button>`;
+      return '';
+    }
+
+    function rowHtml(r) {
+      const st = STATUS[r.status];
+      const warn = (r.warnings || []).map((w) => `<span class="badge orange plain" style="margin-inline-start:4px">${w}</span>`).join('');
+      const notes = (r.notices || []).map((n) => `<div class="hint" style="color:var(--orange)">${esc(n)}</div>`).join('');
+      return `<tr>
+        <td class="num muted">${r.excelRow}</td>
+        <td class="num"><b>${esc(r.fileNo || '—')}</b></td>
+        <td>${esc(r.nameInFile || '—')}</td>
+        <td>${r.beneficiary ? esc(r.beneficiary.full_name) : '<span class="muted">—</span>'}</td>
+        <td class="num" style="text-align:left;white-space:nowrap">${money(r.amount)}</td>
+        <td><span class="badge ${st[1]}">${st[0]}</span>${warn}${notes}</td>
+        <td>${actionsFor(r)}</td>
+      </tr>`;
+    }
+
+    // ---------- الخطوة 1: رفع الملف (لا يُحفظ شيء بعد) ----------
+    function renderUpload(content) {
+      const canUpload = ['admin', 'importer'].includes(state.user.role);
+      content.innerHTML = `
+        <div class="page-head"><div>
+          <h1>استحقاقات الشحن</h1>
+          <p>ارفعي ملف الاستحقاقات الشهري (.xls أو .xlsx). يُقرأ منه الرمز والعائلة والقيمة فقط، ثم تُدقق البيانات قبل أي حفظ.</p>
+        </div></div>
+        <div class="grid grid-2">
+          <section class="card">
+            <div class="card-h"><h2>رفع ملف جديد</h2></div>
+            ${canUpload ? `
+              <label id="drop" class="dropzone" style="display:grid;place-items:center;gap:10px;text-align:center;border:2px dashed #b9c8d8;border-radius:14px;padding:34px 16px;cursor:pointer;background:#fafcfe">
+                ${I('inbox')}
+                <div><b>اختاري ملف الاستحقاقات</b><div class="muted">.xls أو .xlsx</div></div>
+                <input type="file" id="file" accept=".xls,.xlsx" hidden>
+              </label>
+              <div class="notice info" style="margin-top:14px">${I('info')}<div>بعد الرفع تُدقق البيانات، ثم تختارين: إلغاء العملية (لا يُحفظ شيء)، أو المعالجة ثم إكمال العملية (يُحفظ الملف).</div></div>`
+              : `<div class="notice info">${I('info')}<div>رفع الملفات متاح للمدير والمستورد فقط. يمكنكِ متابعة الدفعات الحالية من هنا.</div></div>`}
+          </section>
+          <section class="card">
+            <div class="card-h"><h2>الأعمدة المقروءة</h2></div>
+            <div class="legend">
+              <div class="legend-item"><div><b>الرمز</b><span class="muted">رقم الملف، ويُطابق مع قاعدة المستفيدين</span></div></div>
+              <div class="legend-item"><div><b>العائلة</b><span class="muted">اسم المستفيد كما ورد، ويُقارن مع الاسم المسجل</span></div></div>
+              <div class="legend-item"><div><b>القيمة</b><span class="muted">مبلغ الاستحقاق، رقم فقط</span></div></div>
+            </div>
+          </section>
+        </div>`;
+      const file = document.getElementById('file');
+      if (file) {
+        document.getElementById('drop').addEventListener('dragover', (e) => e.preventDefault());
+        document.getElementById('drop').addEventListener('drop', (e) => { e.preventDefault(); upload(e.dataTransfer.files[0]); });
+        file.addEventListener('change', () => upload(file.files[0]));
+      }
+    }
+
+    function readAsBase64(file) {
+      return new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(String(fr.result).split(',')[1]);
+        fr.onerror = () => reject(new Error('تعذر قراءة الملف'));
+        fr.readAsDataURL(file);
+      });
+    }
+
+    async function upload(file) {
+      if (!file) return;
+      if (!/\.xlsx?$/i.test(file.name)) return App.toast('اختاري ملف Excel بصيغة xls أو xlsx', 'error');
+      try {
+        const b64 = await readAsBase64(file);
+        state.analysis = await App.api('api/entitlements', { method: 'POST', body: { file_name: file.name, file_base64: b64 } });
+        App.toast('تم رفع الملف وتدقيق بياناته');
+        state.filter = 'attention';
+        render();
+      } catch (err) { App.toast(err.message, 'error'); }
+    }
+
+    // ---------- تنبيهات التدقيق ----------
+    function validationBox(a) {
+      const bad = a.rows.filter((r) => r.status === 'invalid');
+      if (!bad.length) return '';
+      return `<div class="notice danger">${I('alert')}<div>
+        <b>أخطاء في الملف (${bad.length}):</b> لا يمكن إكمال العملية قبل تصحيحها. ألغي العملية وارفعي الملف بعد التصحيح.
+        <ul style="margin:8px 0 0;padding-inline-start:18px">
+          ${bad.map((r) => `<li>الصف ${r.excelRow} · ${esc(r.fileNo || '—')} · ${esc(r.issues.join('، '))}</li>`).join('')}
+        </ul></div></div>`;
+    }
+
+    function duplicateBox(a) {
+      if (!a.duplicates.fileNos.length) return '';
+      const list = a.duplicates.fileNos.join('، ');
+      if (!a.duplicates.needsDecision) {
+        return `<div class="notice info">${I('info')}<div><b>تكرار مقبول:</b> رقم الملف ${esc(list)} مكرر في الملف، وقررتِ تصدير الصفين معًا.</div></div>`;
+      }
+      return `<div class="notice warn">${I('alert')}<div>
+        <b>يوجد رقم ملف مكرر في الملف:</b> ${esc(list)}. اختاري أحد الخيارين:
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <button class="btn ghost sm" id="reupload" type="button">إلغاء العملية وإعادة رفع الملف بعد حذف المكرر</button>
+          <button class="btn primary sm" id="keepBoth" type="button">تصدير الصفين معًا</button>
+        </div>
+      </div></div>`;
+    }
+
+    // ---------- الخطوة 2: المعالجة (مسودة) والخطوة 3: بعد الإكمال ----------
+    function renderBatch(content) {
+      const a = state.analysis;
+      const c = a.totals.counts;
+      const draft = a.batch.isDraft;
+      const attention = a.rows.filter(needsAction).length;
+      const canReview = ['admin', 'importer', 'reviewer', 'cards_manager'].includes(state.user.role);
+      const canComplete = draft && a.totals.blocking === 0 && !a.duplicates.needsDecision && !a.rows.some((r) => r.status === 'invalid');
+
+      const headerButtons = [
+        canReview ? `<button class="btn ghost" id="cancelBtn" type="button">${I('alert')}<span>إلغاء العملية</span></button>` : '',
+        draft
+          ? `<button class="btn primary" id="completeBtn" type="button" ${canComplete ? '' : 'disabled'}>${I('check')}<span>إكمال العملية</span></button>`
+          : `<button class="btn gold" id="exportBtn" type="button" ${a.readyToExport ? '' : 'disabled'}>${I('wallet')}<span>تصدير الملفين</span></button>`,
+      ].join('');
+
+      let status;
+      if (draft) {
+        status = canComplete
+          ? `<div class="notice ok">${I('check')}<div><b>الملف جاهز.</b> اضغطي «إكمال العملية» لحفظ الملف المستورد، ثم تصديره لاحقًا.</div></div>`
+          : `<div class="notice warn">${I('alert')}<div><b>المعالجة لم تكتمل.</b> عالجي الصفوف التي تحتاج إجراء، ولا يكتمل الحفظ قبل ذلك.</div></div>`;
+      } else {
+        const blockers = [];
+        if (a.missingPhones.length) blockers.push(`${a.missingPhones.length} مستفيد بلا جوال`);
+        status = a.readyToExport
+          ? `<div class="notice ok">${I('check')}<div><b>العملية محفوظة وجاهزة للتصدير.</b></div></div>`
+          : `<div class="notice warn">${I('alert')}<div><b>التصدير غير متاح بعد:</b> ${blockers.map(esc).join('، ') || 'راجعي الصفوف'}.</div></div>`;
+      }
+
+      content.innerHTML = `
+        <div class="page-head">
+          <div>
+            <h1>استحقاقات الشحن</h1>
+            <p>ملف <b>${esc(a.batch.fileName)}</b> · رُفع ${App.formatDateTime(a.batch.createdAt)} · ${draft ? 'مرحلة المعالجة (لم تُحفظ بعد)' : 'محفوظة'}</p>
+          </div>
+          <span class="spacer"></span>
+          ${headerButtons}
+        </div>
+
+        <div class="grid grid-kpi" style="margin-bottom:18px">
+          <div class="card kpi"><div class="ico blue">${I('users')}</div><div><div class="v num">${a.totals.rows.toLocaleString('ar-SA')}</div><div class="l">عدد الصفوف</div></div></div>
+          <div class="card kpi"><div class="ico gold">${I('wallet')}</div><div><div class="v num" style="font-size:1.4rem">${money(a.totals.amount)}</div><div class="l">إجمالي القيم</div></div></div>
+          <div class="card kpi"><div class="ico green">${I('check')}</div><div><div class="v num">${c.ready.toLocaleString('ar-SA')}</div><div class="l">صفوف جاهزة · ${money(a.totals.readyAmount)}</div></div></div>
+          <div class="card kpi"><div class="ico ${attention ? 'orange' : 'green'}">${I(attention ? 'alert' : 'check')}</div><div><div class="v num">${attention.toLocaleString('ar-SA')}</div><div class="l">صفوف تحتاج إجراء</div></div></div>
+        </div>
+
+        ${validationBox(a)}
+        ${duplicateBox(a)}
+        ${status}
+
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="padding:14px 16px;border-bottom:1px solid var(--line-2)">
+            <div class="card-h" style="margin-bottom:10px"><h2>المعالجة: مقارنة الملف مع قاعدة المستفيدين</h2></div>
+            <div class="segmented" id="segments"></div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>الصف</th><th>رقم الملف</th><th>الاسم في الملف</th><th>الاسم المسجل</th>
+                <th style="text-align:left">القيمة</th><th>الحالة</th><th>الإجراء</th>
+              </tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </div>`;
+
+      const shown = a.rows.filter(matchesFilter);
+      const counts = {
+        attention,
+        all: a.rows.length, ready: c.ready, unregistered: c.unregistered, missing_card: c.missing_card,
+        name_mismatch: c.name_mismatch, invalid: c.invalid + c.duplicate,
+      };
+      document.getElementById('segments').innerHTML = FILTERS.map(([k, label]) =>
+        `<button type="button" data-f="${k}" class="${k === state.filter ? 'active' : ''}">${label} <span class="count-pill num">${counts[k]}</span></button>`).join('');
+      document.querySelectorAll('#segments button').forEach((b) => b.addEventListener('click', () => { state.filter = b.dataset.f; render(); }));
+      document.getElementById('rows').innerHTML = shown.length
+        ? shown.map(rowHtml).join('')
+        : `<tr><td colspan="7"><div class="empty">${I('check')}<div>لا توجد صفوف في هذا التصنيف</div></div></td></tr>`;
+
+      document.querySelectorAll('[data-act]').forEach((btn) => btn.addEventListener('click', () => act(btn.dataset.act, Number(btn.dataset.row))));
+      const cancel = document.getElementById('cancelBtn');
+      if (cancel) cancel.addEventListener('click', () => cancelBatch(draft
+        ? 'سيتم إلغاء العملية. لن يُحفظ أي شيء عنها، ولن يبقى الملف في النظام. المستفيدون الذين أضفتِهم أثناء المعالجة يبقون في قاعدة المستفيدين.'
+        : 'سيتم حذف العملية المحفوظة بالكامل ولن تبقى في السجل. المستفيدون الذين أضفتِهم يبقون في قاعدة المستفيدين.'));
+      const rb = document.getElementById('reupload');
+      if (rb) rb.addEventListener('click', () => cancelBatch('سيتم إلغاء العملية كاملة. احذفي السجل المكرر من الملف الأصلي، ثم ارفعي الملف من جديد.'));
+      const kb = document.getElementById('keepBoth');
+      if (kb) kb.addEventListener('click', async () => {
+        try {
+          state.analysis = await App.api(`api/entitlements/${a.batch.id}/duplicates`, { method: 'POST', body: { choice: 'keep_both' } });
+          App.toast('تم تسجيل القرار: يُصدر الصفان معًا');
+          render();
+        } catch (err) { App.toast(err.message, 'error'); }
+      });
+      const cb = document.getElementById('completeBtn');
+      if (cb) cb.addEventListener('click', completeBatch);
+      const eb = document.getElementById('exportBtn');
+      if (eb) eb.addEventListener('click', () => exportBatch());
+    }
+
+    async function completeBatch() {
+      try {
+        state.analysis = await App.api(`api/entitlements/${state.analysis.batch.id}/complete`, { method: 'POST' });
+        App.toast('تم إكمال العملية وحفظ الملف المستورد');
+        render();
+      } catch (err) { App.toast(err.message, 'error'); }
+    }
+
+    async function act(kind, rowId) {
+      const row = state.analysis.rows.find((r) => r.id === rowId);
+      const base = `api/entitlements/${state.analysis.batch.id}/rows/${rowId}`;
+      try {
+        if (kind === 'keep' || kind === 'useFile') {
+          state.analysis = await App.api(`${base}/name`, { method: 'POST', body: { choice: kind === 'keep' ? 'keep_db_name' : 'use_file_name' } });
+          App.toast('تم حفظ القرار');
+          return render();
+        }
+        if (kind === 'card') {
+          const v = await App.modal({
+            title: 'إضافة بطاقة',
+            submitText: 'إضافة',
+            body: {
+              html: `<div class="field"><label for="c">رقم البطاقة (20 رقمًا)</label><input class="input ltr" id="c" name="card_no" required inputmode="numeric" maxlength="20"></div>`,
+              onSubmit: (form) => App.api(`${base}/card`, { method: 'POST', body: { card_no: form.card_no.value.trim() } }),
+            },
+          });
+          if (v) { App.toast('تمت إضافة البطاقة'); await refresh(); }
+        }
+        if (kind === 'phone') {
+          const v = await App.modal({
+            title: 'إضافة رقم الجوال',
+            submitText: 'حفظ',
+            body: {
+              html: `<div class="notice info" style="margin-bottom:12px">${I('info')}<div>${esc(row.beneficiary.full_name)} · رقم الملف <b class="num">${esc(row.fileNo)}</b></div></div>
+                     <div class="field"><label for="p">رقم الجوال</label><input class="input ltr" id="p" name="phone" required inputmode="tel" placeholder="05xxxxxxxx"></div>`,
+              onSubmit: (form) => App.api(`${base}/phone`, { method: 'POST', body: { phone: form.phone.value.trim() } }),
+            },
+          });
+          if (v) { App.toast('تم حفظ الجوال'); await refresh(); }
+        }
+        if (kind === 'add') {
+          const v = await App.modal({
+            title: 'إضافة مستفيد جديد',
+            submitText: 'إضافة المستفيد',
+            body: {
+              html: `
+                <div class="notice info" style="margin-bottom:12px">${I('info')}<div>رقم الملف <b class="num">${esc(row.fileNo)}</b> والاسم <b>${esc(row.nameInFile)}</b> من الملف.</div></div>
+                <div class="field"><label for="c">رقم البطاقة (20 رقمًا)</label><input class="input ltr" id="c" name="card_no" required inputmode="numeric" maxlength="20"></div>
+                <div class="field"><label for="p">رقم الجوال (اختياري الآن، ويلزم قبل تصدير ملف التواصل)</label><input class="input ltr" id="p" name="phone" inputmode="tel" placeholder="05xxxxxxxx"></div>`,
+              onSubmit: (form) => App.api(`${base}/beneficiary`, { method: 'POST', body: { card_no: form.card_no.value.trim(), phone: form.phone.value } }),
+            },
+          });
+          if (v) { App.toast('تمت إضافة المستفيد والبطاقة'); await refresh(); }
+        }
+      } catch (err) { App.toast(err.message, 'error'); }
+    }
+
+    function download(name, base64) {
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    async function exportBatch() {
+      const a = state.analysis;
+      const notices = a.duplicates.fileNos.length
+        ? `<div class="notice info" style="margin-bottom:12px">${I('info')}<div>تنبيه: رقم الملف ${esc(a.duplicates.fileNos.join('، '))} مكرر في الملف، والصفان يُصدران معًا.</div></div>`
+        : '';
+      const ok = await App.modal({
+        title: 'تصدير ملفي المورد والتواصل',
+        submitText: 'تصدير وإغلاق العملية',
+        body: {
+          html: `${notices}
+            <div class="notice warn" style="margin-bottom:12px">${I('info')}<div>عند التصدير تُسجَّل عملية شحن لكل مستفيد بقيمة الملف، وبتاريخ اليوم، وتُغلق العملية.</div></div>
+            <div class="field"><label>نص الرسالة العام</label>
+              <div class="input" style="background:#f8fafc">عزيزي المستفيد/ة، تم شحن البطاقة الغذائية لأسواق المنتزه. يومًا سعيدًا، جمعية سيهات للخدمات الاجتماعية</div>
+            </div>`,
+          onSubmit: async () => {
+            const out = await App.api(`api/entitlements/${a.batch.id}/export`, { method: 'POST' });
+            out.files.forEach((f) => download(f.name, f.base64));
+            return out;
+          },
+        },
+      });
+      if (ok) {
+        App.toast('تم التصدير وإغلاق العملية. يمكن تنزيل الملفين لاحقًا من سجل العمليات');
+        state.analysis = null;
+        render();
+      }
+    }
+
+    // الإلغاء يحذف العملية بالكامل: بلا سبب وبلا سجل. يُطلب تأكيد فقط.
+    async function cancelBatch(message) {
+      const v = await App.modal({
+        title: 'تأكيد إلغاء العملية',
+        submitText: 'نعم، ألغِ العملية',
+        danger: true,
+        body: {
+          html: `<div class="notice warn">${I('alert')}<div>${esc(message)}</div></div>`,
+          onSubmit: () => App.api(`api/entitlements/${state.analysis.batch.id}/cancel`, { method: 'POST' }),
+        },
+      });
+      if (v) { App.toast('تم إلغاء العملية'); state.analysis = null; render(); }
+    }
+
+    async function refresh() {
+      state.analysis = await App.api('api/entitlements/open');
+      if (state.analysis.batch === null) state.analysis = null;
+      render();
+    }
+
+    function render() {
+      const content = document.getElementById('content');
+      if (!state.analysis) renderUpload(content); else renderBatch(content);
+    }
+
+    (async () => {
+      try {
+        const { user } = await App.mount({ active: 'entitlements.html', title: 'استحقاقات الشحن' });
+        state.user = user;
+        state.analysis = await App.api('api/entitlements/open');
+        if (state.analysis.batch === null) state.analysis = null;
+        render();
+      } catch (err) {
+        if (err.message !== 'يجب تسجيل الدخول') App.toast(err.message, 'error');
+      }
+    })();
+  </script>
+</body>
+</html>
+

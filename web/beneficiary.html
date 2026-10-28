@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>بيانات المستفيد</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script src="assets/common.js"></script>
+  <script>
+    const I = App.icon;
+    const esc = App.escapeHtml;
+    const id = Number(new URLSearchParams(location.search).get('id'));
+    const FLAG_TEXT = {
+      duplicate: 'هذا الجوال مسجل أيضًا لمستفيد آخر. تأكدي من الرقم مع المستفيد، ثم أكدي الرقم أو عدّليه.',
+      international: 'هذا الرقم لا يبدأ بـ 05 (رقم غير سعودي بصيغة الجوال المعتمدة). تأكدي منه ثم أكدي الرقم أو عدّليه.',
+    };
+
+    let data = null;
+
+    function infoItem(label, value, small = false) {
+      return `<div class="info-item"><div class="k">${label}</div><div class="v ${small ? 'small' : ''} num">${value}</div></div>`;
+    }
+
+    function render(content) {
+      const b = data.beneficiary;
+      const active = data.cards.find((c) => c.status === 'active');
+      const initials = b.full_name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('');
+      const flag = b.phone_flag
+        ? `<div class="notice warn">${I('alert')}<div>
+             <b>بيانات تحتاج تأكيدًا</b><br>${FLAG_TEXT[b.phone_flag]}
+             <div style="margin-top:10px"><button class="btn gold sm" id="confirmBtn" type="button">${I('check')}<span>تأكيد الرقم كما هو</span></button></div>
+           </div></div>`
+        : '';
+
+      content.innerHTML = `
+        <div class="grid" style="gap:18px">
+          <section class="card">
+            <div class="profile-head">
+              <div class="avatar" style="width:64px;height:64px;font-size:1.3rem;border-radius:18px">${esc(initials)}</div>
+              <div class="who">
+                <h2>${esc(b.full_name)}</h2>
+                <div class="meta">
+                  <span>رقم الملف <b class="num">${esc(b.file_no)}</b></span>
+                  <span>·</span>
+                  <span>الجوال <b class="num" dir="ltr">${esc(b.phone || '—')}</b></span>
+                </div>
+              </div>
+              <div>${App.statusBadge(b.status)}</div>
+              <button class="btn ghost" id="editBtn" type="button">${I('edit')}<span>تعديل البيانات</span></button>
+            </div>
+
+            <div class="info-list" style="margin-top:18px">
+              ${infoItem('آخر رصيد شحن', b.last_balance !== null && b.last_balance !== undefined ? `${esc(b.last_balance)} ر.س` : 'لا يوجد')}
+              ${infoItem('تاريخ آخر عملية شحن', b.last_shipped_at ? App.formatDate(b.last_shipped_at) : 'لا يوجد سجل شحن', true)}
+              ${infoItem('رقم البطاقة النشطة', active ? `<span dir="ltr">${esc(active.card_no)}</span>` : 'لا توجد بطاقة', true)}
+              ${infoItem('حالة الشحن', App.statusBadge(b.status))}
+            </div>
+            ${b.status.reason ? `<div class="hint" style="margin-top:10px">السبب: ${esc(b.status.reason)}</div>` : ''}
+          </section>
+
+          ${flag}
+
+          <div class="grid grid-2">
+            <section class="card">
+              <div class="card-h"><h2>البطاقات</h2><span class="spacer"></span>
+                ${active ? '' : `<button class="btn primary sm" id="addCardBtn" type="button">${I('plus')}<span>إضافة بطاقة</span></button>`}
+              </div>
+              ${data.cards.length ? `
+                <div class="table-wrap"><table>
+                  <thead><tr><th>رقم البطاقة</th><th>الحالة</th><th>تاريخ الإصدار</th></tr></thead>
+                  <tbody>${data.cards.map((c) => `
+                    <tr>
+                      <td class="num" dir="ltr" style="text-align:right">${esc(c.card_no)}</td>
+                      <td>${c.status === 'active' ? '<span class="badge green">نشطة</span>' : '<span class="badge plain">غير نشطة</span>'}</td>
+                      <td>${App.formatDate(c.issued_at)}</td>
+                    </tr>`).join('')}
+                  </tbody>
+                </table></div>`
+                : `<div class="empty">${I('card')}<div>لا توجد بطاقات لهذا المستفيد بعد</div></div>`}
+            </section>
+
+            <section class="card">
+              <div class="card-h"><h2>سند الاستلام</h2></div>
+              <p class="text-2" style="margin-top:0">يُطبع سند استلام لهذا المستفيد يتضمن بياناته ورقم بطاقته، ويُوقَّع عند الاستلام.</p>
+              <a class="btn primary" href="receipt.html?id=${b.id}" target="_blank" ${active ? '' : 'aria-disabled="true" style="pointer-events:none;opacity:.5"'}>${I('print')}<span>طباعة السند</span></a>
+              ${active ? '' : '<div class="hint">لا يمكن طباعة السند قبل إضافة بطاقة نشطة.</div>'}
+            </section>
+          </div>
+        </div>`;
+
+      document.getElementById('editBtn').addEventListener('click', () => editModal(b, active));
+      const confirmBtn = document.getElementById('confirmBtn');
+      if (confirmBtn) confirmBtn.addEventListener('click', async () => {
+        try {
+          await App.api(`api/beneficiaries/${id}/confirm-phone`, { method: 'POST' });
+          App.toast('تم تأكيد الرقم');
+          await reload();
+        } catch (err) { App.toast(err.message, 'error'); }
+      });
+      const addBtn = document.getElementById('addCardBtn');
+      if (addBtn) addBtn.addEventListener('click', () => addCardModal());
+    }
+
+    async function reload() {
+      data = await App.api(`api/beneficiaries/${id}`);
+      render(document.getElementById('content'));
+    }
+
+    function editModal(b, active) {
+      App.modal({
+        title: 'تعديل بيانات المستفيد',
+        submitText: 'حفظ التعديل',
+        body: {
+          html: `
+            <div class="field"><label for="m_name">الاسم</label><input class="input" id="m_name" name="full_name" required value="${esc(b.full_name)}"></div>
+            <div class="field"><label for="m_phone">رقم الجوال</label><input class="input ltr" id="m_phone" name="phone" inputmode="tel" value="${esc(b.phone || '')}" placeholder="05xxxxxxxx"></div>
+            <div class="field"><label for="m_card">رقم البطاقة</label><input class="input ltr" id="m_card" name="card_no" inputmode="numeric" maxlength="20" value="${esc(active ? active.card_no : '')}" placeholder="20 رقمًا"><div class="hint">تحديث الرقم يستبدل البطاقة النشطة الحالية.</div></div>`,
+          onSubmit: async (form) => {
+            await App.api(`api/beneficiaries/${id}`, {
+              method: 'PATCH',
+              body: { full_name: form.full_name.value, phone: form.phone.value, card_no: form.card_no.value },
+            });
+            App.toast('تم حفظ التعديل');
+            await reload();
+          },
+        },
+      });
+    }
+
+    function addCardModal() {
+      App.modal({
+        title: 'إضافة بطاقة',
+        submitText: 'إضافة',
+        body: {
+          html: `<div class="field"><label for="c_no">رقم البطاقة (20 رقمًا)</label><input class="input ltr" id="c_no" name="card_no" required inputmode="numeric" maxlength="20" placeholder="يمكن قراءته بقارئ الباركود"></div>`,
+          onSubmit: async (form) => {
+            await App.api(`api/beneficiaries/${id}/cards`, { method: 'POST', body: { card_no: form.card_no.value.trim() } });
+            App.toast('تمت إضافة البطاقة');
+            await reload();
+          },
+        },
+      });
+    }
+
+    (async () => {
+      try {
+        const { content } = await App.mount({
+          active: 'beneficiaries.html',
+          title: 'بيانات المستفيد',
+          back: 'beneficiaries.html',
+        });
+        content.id = 'content';
+        await reload();
+      } catch (err) {
+        if (err.message !== 'يجب تسجيل الدخول') App.toast(err.message, 'error');
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>سجل العمليات</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script src="assets/common.js"></script>
+  <script>
+    const I = App.icon;
+    const esc = App.escapeHtml;
+
+    const KIND = {
+      'beneficiaries.import': ['استيراد المستفيدين', 'navy'],
+      'entitlements.import': ['استيراد الاستحقاقات', 'gold'],
+    };
+    const STATUS = {
+      imported: ['تم الاستيراد', 'navy'],
+      pending_export: ['بانتظار التصدير', 'orange'],
+      exported: ['مصدّرة ومغلقة', 'green'],
+    };
+
+    function filesHtml(o) {
+      if (!o.files || !o.files.length) return '<span class="muted">—</span>';
+      const label = { supplier: 'ملف المورد', contacts: 'ملف التواصل' };
+      return o.files.map((f) => `
+        <a class="btn ghost sm" href="api/exported-files/${f.id}" download style="margin:2px 0">${I('wallet')}<span>${label[f.kind] || 'تنزيل'}</span></a>`).join(' ');
+    }
+
+    (async () => {
+      try {
+        const { content } = await App.mount({ active: 'operations.html', title: 'سجل العمليات' });
+        const { items } = await App.api('api/operations');
+        const pending = items.filter((o) => o.status === 'pending_export').length;
+        content.innerHTML = `
+          <div class="page-head">
+            <div>
+              <h1>سجل العمليات</h1>
+              <p>كل عملية استيراد مع حالتها. ملفات التصدير محفوظة هنا لإعادة تنزيلها عند الحاجة.</p>
+            </div>
+          </div>
+          ${pending ? `<div class="notice warn">${I('alert')}<div><b>${pending}</b> عملية استيراد بانتظار التصدير.</div></div>` : ''}
+          <div class="card" style="padding:0;overflow:hidden">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>تاريخ الاستيراد</th><th>النوع</th><th>الملف</th><th>الصفوف</th><th>المستخدم</th><th>الحالة</th><th>تاريخ التصدير</th><th>الملفات</th></tr></thead>
+                <tbody>
+                  ${items.length ? items.map((o) => {
+                    const k = KIND[o.kind] || [o.kind, 'plain'];
+                    const s = STATUS[o.status] || [o.status, 'plain'];
+                    return `<tr>
+                      <td class="num">${App.formatDateTime(o.at)}</td>
+                      <td><span class="badge ${k[1]}">${k[0]}</span></td>
+                      <td>${esc(o.fileName || '—')}</td>
+                      <td class="num">${(o.rows ?? 0).toLocaleString('ar-SA')}</td>
+                      <td>${esc(o.user_name || '—')}</td>
+                      <td><span class="badge ${s[1]}">${s[0]}</span></td>
+                      <td class="num">${o.exportedAt ? App.formatDateTime(o.exportedAt) : '—'}</td>
+                      <td>${filesHtml(o)}</td>
+                    </tr>`;
+                  }).join('') : `<tr><td colspan="8"><div class="empty">${I('history')}<div>لا توجد عمليات مسجلة بعد</div></div></td></tr>`}
+                </tbody>
+              </table>
+            </div>
+          </div>`;
+      } catch (err) {
+        if (err.message !== 'يجب تسجيل الدخول') App.toast(err.message, 'error');
+      }
+    })();
+  </script>
+</body>
+</html>

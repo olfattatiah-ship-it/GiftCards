@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>الرئيسية</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script src="assets/common.js"></script>
+  <script>
+    const I = App.icon;
+    (async () => {
+      try {
+        const { content, user } = await App.mount({ active: 'index.html', title: 'الرئيسية' });
+        const first = user.full_name.split(/\s+/)[0];
+        const s = await App.api('api/summary');
+        const today = new Date().toLocaleDateString('ar-SA-u-ca-gregory', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+        content.innerHTML = `
+          <div class="page-head">
+            <div>
+              <h1>أهلًا ${App.escapeHtml(first)}</h1>
+              <p>${today}</p>
+            </div>
+          </div>
+
+          <div class="grid grid-kpi" style="margin-bottom:18px">
+            <a class="card kpi link" href="beneficiaries.html">
+              <div class="ico blue">${I('users')}</div>
+              <div><div class="v num">${s.total}</div><div class="l">إجمالي المستفيدين</div></div>
+            </a>
+            <a class="card kpi link" href="beneficiaries.html?filter=has_card">
+              <div class="ico green">${I('card')}</div>
+              <div><div class="v num">${s.activeCards}</div><div class="l">بطاقات مسجلة</div></div>
+            </a>
+            <a class="card kpi link" href="beneficiaries.html?filter=no_card">
+              <div class="ico red">${I('alert')}</div>
+              <div><div class="v num">${s.withoutCard}</div><div class="l">مستفيدون بلا بطاقة</div></div>
+            </a>
+            <a class="card kpi link" href="beneficiaries.html?filter=flagged">
+              <div class="ico orange">${I('info')}</div>
+              <div><div class="v num">${s.flagged}</div><div class="l">بيانات تحتاج تأكيدًا</div></div>
+            </a>
+          </div>
+
+          <div class="grid grid-2">
+            <section class="card">
+              <div class="card-h"><h2>حالة الشحن</h2><span class="spacer"></span><span class="muted">حسب آخر عملية شحن</span></div>
+              <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:12px">
+                <a class="card" href="beneficiaries.html?filter=green" style="box-shadow:none;text-align:center">
+                  <div class="v num" style="font-size:2rem;font-weight:800;color:var(--green)">${s.green}</div>
+                  <div class="badge green plain" style="margin-top:6px">نشطة</div>
+                </a>
+                <a class="card" href="beneficiaries.html?filter=orange" style="box-shadow:none;text-align:center">
+                  <div class="v num" style="font-size:2rem;font-weight:800;color:var(--orange)">${s.orange}</div>
+                  <div class="badge orange plain" style="margin-top:6px">تحتاج متابعة</div>
+                </a>
+                <a class="card" href="beneficiaries.html?filter=red" style="box-shadow:none;text-align:center">
+                  <div class="v num" style="font-size:2rem;font-weight:800;color:var(--red)">${s.red}</div>
+                  <div class="badge red plain" style="margin-top:6px">غير نشطة</div>
+                </a>
+              </div>
+              <div class="notice info" style="margin-top:16px">
+                ${I('info')}
+                <div>تُحسب الحالة من تاريخ آخر عملية شحن. المستفيد الذي ليس له أي عملية شحن يظهر باللون الأحمر حتى تُسجَّل أول عملية شحن.</div>
+              </div>
+            </section>
+
+            <section class="card">
+              <div class="card-h"><h2>ماذا تعني الألوان؟</h2></div>
+              <div class="legend">
+                <div class="legend-item"><span class="dot green"></span><div><b>أخضر · نشطة</b><span class="muted">آخر شحن خلال الشهرين الماضيين، بما في ذلك الشهرين.</span></div></div>
+                <div class="legend-item"><span class="dot orange"></span><div><b>برتقالي · تحتاج متابعة</b><span class="muted">مرّ أكثر من شهرين وحتى أقل من أربعة أشهر.</span></div></div>
+                <div class="legend-item"><span class="dot red"></span><div><b>أحمر · غير نشطة</b><span class="muted">مرّت أربعة أشهر أو أكثر، أو لا يوجد أي شحن سابق.</span></div></div>
+              </div>
+            </section>
+          </div>
+        `;
+      } catch (err) {
+        if (err.message !== 'يجب تسجيل الدخول') {
+          document.getElementById('app').innerHTML = `<div class="content"><div class="notice danger">${App.escapeHtml(err.message)}</div></div>`;
+        }
+      }
+    })();
+  </script>
+</body>
+</html>
